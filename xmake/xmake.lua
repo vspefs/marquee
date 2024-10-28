@@ -1,0 +1,1 @@
+includes("rule/c++.with.stdmodule.lua")
