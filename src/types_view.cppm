@@ -170,8 +170,8 @@ namespace mrq
 
 export namespace mrq
 {
-    template <standard_types_view View0, standard_types_view View1>
-    consteval auto concat(View0, View1) noexcept;
+    template <standard_types_view View0, standard_types_view View1, standard_types_view... Leftovers>
+    consteval auto concat(View0 view0, View1 view1, Leftovers...) noexcept;
 
     template <typename Pred, standard_types_view View> requires standard_types_view_invocable_r<bool, Pred, View>
     consteval auto find_if(Pred, View) noexcept;
@@ -195,7 +195,7 @@ namespace mrq
     }
 
     template <standard_types_view View0, standard_types_view View1>
-    consteval auto concat(View0 view0, View1 view1) noexcept
+    consteval auto concat_two(View0 view0, View1 view1) noexcept
     {
         if constexpr (empty(view1))
         {
@@ -208,6 +208,15 @@ namespace mrq
                 itoa(next(begin(view1)), sentinel(view1))
             );
         }
+    }
+
+    template <standard_types_view View0, standard_types_view View1, standard_types_view... Leftovers>
+    consteval auto concat(View0 view0, View1 view1, Leftovers... leftovers) noexcept
+    {
+        if constexpr (sizeof...(Leftovers) == 0)
+            return concat_two(view0, view1);
+        else
+            return concat(view0, concat(view1, leftovers...));
     }
 
     template <typename Pred, type_iterator Begin, type_iterator End>
