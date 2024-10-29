@@ -140,20 +140,24 @@ export namespace mrq
 
 namespace mrq
 {
-    template <typename Ret, typename Pred, typename It>
-    concept invocable_at_r = std::is_invocable_r_v<Ret, Pred, It> && type_iterator<It>;
+    template <typename Ret, typename Pred, typename View, size_t At>
+    concept invocable_at_r = (
+          At == View::size
+        ? std::is_invocable_r_v<bool, Pred, sentinel_t<View>>
+        : std::is_invocable_r_v<bool, Pred, iterator_at_t<View, At>>
+    );
 
     template <typename Ret, typename Pred, standard_types_view View, size_t... Is>
     consteval bool standard_types_view_invocable_helper(std::integer_sequence<size_t, Is...>)
     {
         if constexpr (sizeof...(Is) == 0)
         {
-            return invocable_at_r<Ret, Pred, sentinel_t<View>>;
+            return invocable_at_r<Ret, Pred, View, View::size>;
         }
         else
         {
             auto ret = true;
-            auto seq = std::to_array({ invocable_at_r<Ret, View, iterator_at_t<View, Is>>... });
+            auto seq = std::to_array({ invocable_at_r<Ret, Pred, View, Is>... });
             for (auto valid : seq)
                 ret = ret && valid;
             return ret;
@@ -161,7 +165,7 @@ namespace mrq
     }
 
     template <typename Ret, typename Pred, typename View>
-    concept standard_types_view_invocable_r = standard_types_view_invocable_helper<Ret, Pred, View>(std::integer_sequence<size_t, View::size>());
+    concept standard_types_view_invocable_r = standard_types_view_invocable_helper<Ret, Pred, View>(std::make_integer_sequence<size_t, View::size>());
 }
 
 export namespace mrq
@@ -209,7 +213,7 @@ namespace mrq
     template <typename Pred, type_iterator Begin, type_iterator End>
     consteval auto find_if(Pred pred, Begin begin, End end) noexcept
     {
-        if constexpr (begin == end)
+        if constexpr (index(begin) == index(end))
         {
             return end;
         }
@@ -226,7 +230,7 @@ namespace mrq
     template <typename Pred, standard_types_view View> requires standard_types_view_invocable_r<bool, Pred, View>
     consteval auto find_if(Pred pred, View view) noexcept
     {
-        return find_if_helper(pred, begin(view), sentinel(view));
+        return find_if(pred, begin(view), sentinel(view));
     }
 
     template <type_iterator Current, type_iterator End, typename... Ts> requires std::same_as<view_type_t<Current>, view_type_t<End>>
