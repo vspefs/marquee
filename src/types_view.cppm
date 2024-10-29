@@ -173,8 +173,8 @@ export namespace mrq
     template <standard_types_view View0, standard_types_view View1, standard_types_view... Leftovers>
     consteval auto concat(View0 view0, View1 view1, Leftovers...) noexcept;
 
-    template <typename Pred, standard_types_view View> requires standard_types_view_invocable_r<bool, Pred, View>
-    consteval auto find_if(Pred, View) noexcept;
+    template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_invocable_r<bool, Pred, View> && (true && ... && standard_types_view_invocable_r<bool, Preds, View>)
+    consteval auto find_if(View view, Pred pred, Preds... others) noexcept;
 
     template <type_iterator Begin, type_iterator End> requires std::same_as<view_type_t<Begin>, view_type_t<End>>
     consteval auto itoa(Begin begin, End end) noexcept;
@@ -220,7 +220,7 @@ namespace mrq
     }
 
     template <typename Pred, type_iterator Begin, type_iterator End>
-    consteval auto find_if(Pred pred, Begin begin, End end) noexcept
+    consteval auto find_if_helper(Pred pred, Begin begin, End end) noexcept
     {
         if constexpr (index(begin) == index(end))
         {
@@ -232,14 +232,19 @@ namespace mrq
         }
         else
         {
-            return find_if(pred, next(begin), end);
+            return find_if_helper(pred, next(begin), end);
         }
     }
 
-    template <typename Pred, standard_types_view View> requires standard_types_view_invocable_r<bool, Pred, View>
-    consteval auto find_if(Pred pred, View view) noexcept
+    template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_invocable_r<bool, Pred, View> && (true && ... && standard_types_view_invocable_r<bool, Preds, View>)
+    consteval auto find_if(View view, Pred pred, Preds... others) noexcept
     {
-        return find_if(pred, begin(view), sentinel(view));
+        auto all_preds = [=](type_iterator auto it) consteval noexcept
+        {
+            return std::invoke(pred, it) && (true && ... && std::invoke(others, it));
+        };
+
+        return find_if_helper(all_preds, begin(view), sentinel(view));
     }
 
     template <type_iterator Current, type_iterator End, typename... Ts> requires std::same_as<view_type_t<Current>, view_type_t<End>>
