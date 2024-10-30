@@ -26,33 +26,20 @@ namespace mrq::infra
     concept meta_iterator_non_sentinel = meta_iterator<T> && (!meta_sentinel<T>);
 
     template <typename View, size_t I>
-    concept has_valid_iterator_at = (
-          I == View::size
-        ? meta_sentinel<typename View::sentinel>
-        : meta_iterator_non_sentinel<typename View::template iterator<I>>
-    );
+    concept has_valid_iterator_at = 
+           (I == View::size && meta_sentinel<typename View::sentinel>) 
+        || (I != View::size && meta_iterator_non_sentinel<typename View::template iterator<I>>);
 
     template <typename View, size_t... Is>
     consteval bool standard_view_helper(std::integer_sequence<size_t, Is...>)
     {
-        if constexpr (sizeof...(Is) == 0)
-        {
-            return meta_sentinel<typename View::sentinel> && std::same_as<typename View::template iterator<0>, typename View::sentinel>;
-        }
-        else
-        {
-            auto ret = true;
-            auto seq = std::to_array({ has_valid_iterator_at<View, Is>... });
-            for (auto valid : seq)
-                ret = ret && valid;
-            return ret;
-        }
+        return (has_valid_iterator_at<View, Is> && ...);
     }
 
     export template <typename View>
     concept standard_view =
            std::same_as<std::remove_cvref_t<decltype(View::size)>, size_t> 
-        && standard_view_helper<View>(std::make_integer_sequence<size_t, View::size>());
+        && standard_view_helper<View>(std::make_integer_sequence<size_t, View::size + 1>());
 }
 
 // ---- basic iterator support ---- //
@@ -138,6 +125,12 @@ export namespace mrq::infra
         else
             return -static_cast<difference_t>(index(from) - index(to));
     }
+
+    template <meta_iterator Lhs, meta_iterator Rhs> requires std::same_as<view_type_t<Lhs>, view_type_t<Rhs>>
+    consteval std::strong_ordering operator<=>(Lhs lhs, Rhs rhs) noexcept
+    {
+        return index(lhs) <=> index(rhs);
+    }
 }
 
 // ---- exporting necessity to `mrq` namespace ---- //
@@ -171,6 +164,8 @@ export namespace mrq
 
     using ::mrq::infra::prev;
     using ::mrq::infra::prev_t;
+
+    using ::mrq::infra::operator<=>;    // For ADL of classes residing in `mrq`. I guess. If it doesn't help, it doesn't hurt anyway.
 }
 
 // NOLINTEND(misc-unused-using-decls)

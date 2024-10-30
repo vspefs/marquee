@@ -97,33 +97,20 @@ namespace mrq
     concept type_sentinel = infra::meta_sentinel<T> && is_types_view_meta_iterator<T>;
 
     template <typename View, size_t I>
-    concept has_valid_type_iterator_at = (
-          I == View::size
-        ? type_sentinel<typename View::sentinel>
-        : type_iterator_non_sentinel<typename View::template iterator<I>>
-    );
+    concept has_valid_type_iterator_at = 
+           (I == View::size && type_sentinel<typename View::sentinel>)
+        || (I != View::size && type_iterator_non_sentinel<typename View::template iterator<I>>);
 
     template <typename View, size_t... Is>
     consteval bool standard_types_view_helper(std::integer_sequence<size_t, Is...>)
     {
-        if constexpr (View::size == 0)
-        {
-            return type_sentinel<typename View::sentinel>;
-        }
-        else
-        {
-            auto ret = true;
-            auto seq = std::to_array({ has_valid_type_iterator_at<View, Is>... });
-            for (auto valid : seq)
-                ret = ret && valid;
-            return ret;
-        }
+        return (has_valid_type_iterator_at<View, Is> && ...);
     }
 
     export template <typename T>
     concept standard_types_view = 
            infra::standard_view<T> 
-        && standard_types_view_helper<T>(std::make_integer_sequence<size_t, T::size>{})
+        && standard_types_view_helper<T>(std::make_integer_sequence<size_t, T::size + 1>{})
         && (requires (T t) { { t.template to<std::tuple>() } -> std::same_as<typename T::template to_t<std::tuple>>; }
          || T::size == 0);
 }
@@ -141,31 +128,29 @@ export namespace mrq
 namespace mrq
 {
     template <typename Ret, typename Pred, typename View, size_t At>
-    concept invocable_at_r = (
-          At == View::size
-        ? std::is_invocable_r_v<bool, Pred, sentinel_t<View>>
-        : std::is_invocable_r_v<bool, Pred, iterator_at_t<View, At>>
-    );
+    concept invocable_at_r =
+           (At == View::size && std::is_invocable_r_v<bool, Pred, sentinel_t<View>>)
+        || (At != View::size && std::is_invocable_r_v<bool, Pred, iterator_at_t<View, At>>);
+
+    template <typename Pred, typename View, size_t At>
+    concept invocable_at =
+           (At == View::size && std::is_invocable_v<Pred, sentinel_t<View>>)
+        || (At != View::size && std::is_invocable_v<Pred, iterator_at_t<View, At>>);
 
     template <typename Ret, typename Pred, standard_types_view View, size_t... Is>
     consteval bool standard_types_view_invocable_helper(std::integer_sequence<size_t, Is...>)
     {
-        if constexpr (sizeof...(Is) == 0)
-        {
-            return invocable_at_r<Ret, Pred, View, View::size>;
-        }
+        if constexpr (std::same_as<void, Ret>)
+            return (invocable_at<Pred, View, Is> && ...);
         else
-        {
-            auto ret = true;
-            auto seq = std::to_array({ invocable_at_r<Ret, Pred, View, Is>... });
-            for (auto valid : seq)
-                ret = ret && valid;
-            return ret;
-        }
+            return (invocable_at_r<Ret, Pred, View, Is> && ...);
     }
 
     template <typename Ret, typename Pred, typename View>
-    concept standard_types_view_invocable_r = standard_types_view_invocable_helper<Ret, Pred, View>(std::make_integer_sequence<size_t, View::size>());
+    concept standard_types_view_invocable_r = standard_types_view_invocable_helper<Ret, Pred, View>(std::make_integer_sequence<size_t, View::size + 1>());
+
+    template <typename View, typename Pred>
+    concept standard_types_view_invocable = standard_types_view_invocable_helper<void, Pred, View>(std::make_integer_sequence<size_t, View::size + 1>());
 }
 
 export namespace mrq
@@ -194,27 +179,24 @@ namespace mrq
         return add_type_helper<View, T>(std::make_integer_sequence<size_t, size(view)>());
     }
 
-    template <standard_types_view View0, standard_types_view View1>
-    consteval auto concat_two(View0 view0, View1 view1) noexcept
-    {
-        if constexpr (empty(view1))
-        {
-            return view0;
-        }
-        else
-        {
-            return concat(
-                add_type<type_t<begin_t<View1>>>(view0),
-                itoa(next(begin(view1)), sentinel(view1))
-            );
-        }
-    }
-
     template <standard_types_view View0, standard_types_view View1, standard_types_view... Leftovers>
     consteval auto concat(View0 view0, View1 view1, Leftovers... leftovers) noexcept
     {
         if constexpr (sizeof...(Leftovers) == 0)
-            return concat_two(view0, view1);
+        {
+            if constexpr (empty(view1))
+            {
+                return view0;
+            }
+            else
+            {
+                return concat(
+                    add_type<type_t<begin_t<View1>>>(view0),
+                    itoa(next(begin(view1)), sentinel(view1)),
+                    leftovers...
+                );
+            }
+        }
         else
             return concat(view0, concat(view1, leftovers...));
     }
@@ -222,7 +204,7 @@ namespace mrq
     template <typename Pred, type_iterator Begin, type_iterator End>
     consteval auto find_if_helper(Pred pred, Begin begin, End end) noexcept
     {
-        if constexpr (index(begin) == index(end))
+        if constexpr (begin == end)
         {
             return end;
         }
