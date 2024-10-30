@@ -3,13 +3,32 @@ import vspefs.marquee;
 
 int main()
 {
-    mrq::types_view<int, double> tv0;
-    mrq::types_view<float, long> tv1;
-    auto tv = mrq::concat(tv0, tv1);
+    mrq::types_view<std::string, int, double, std::array<int, 3>, float, std::vector<short>> tv;
 
-    auto t = tv.to<std::tuple>(0, 2.0, 1.0f, 111l);
-    std::println("int: {}", std::get<int>(t));
-    std::println("double: {}", std::get<double>(t));
-    std::println("float: {}", std::get<float>(t));
-    std::println("long: {}", std::get<long>(t));
+    constexpr auto ranges = mrq::filter(
+        tv, 
+        [](mrq::type_iterator auto it) consteval noexcept -> bool
+        {
+            return std::ranges::range<mrq::type_t<decltype(it)>>;
+        }
+    );
+
+    constexpr auto fundamentals = mrq::filter(
+        tv, 
+        [](mrq::type_iterator auto it) consteval noexcept -> bool
+        {
+            return std::is_arithmetic_v<mrq::type_t<decltype(it)>>;
+        }
+    );
+
+    constexpr auto new_tv = mrq::concat(ranges, fundamentals);
+    auto t = new_tv.to<std::tuple>(
+        "hello", 
+        std::to_array({ 3, 4, 5 }), 
+        std::vector<short>{ 6, 7, 8 },
+        
+        15,
+        2.0,
+        7.5f
+    );
 }
