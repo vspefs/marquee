@@ -163,6 +163,9 @@ export namespace mrq
 
     template <type_iterator Begin, type_iterator End> requires std::same_as<view_type_t<Begin>, view_type_t<End>>
     consteval auto itoa(Begin begin, End end) noexcept;
+
+    template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_invocable_r<bool, Pred, View> && (true && ... && standard_types_view_invocable_r<bool, Preds, View>)
+    consteval auto filter(View view, Pred pred, Preds... others) noexcept;
 }
 
 namespace mrq
@@ -204,7 +207,7 @@ namespace mrq
     template <typename Pred, type_iterator Begin, type_iterator End>
     consteval auto find_if_helper(Pred pred, Begin begin, End end) noexcept
     {
-        if constexpr (begin == end)
+        if constexpr (begin <=> end == std::strong_ordering::equal)
         {
             return end;
         }
@@ -242,6 +245,25 @@ namespace mrq
     consteval auto itoa(Begin begin, End end) noexcept
     {
         return itoa_helper(begin, end);
+    }
+
+    template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_invocable_r<bool, Pred, View> && (true && ... && standard_types_view_invocable_r<bool, Preds, View>)
+    consteval auto filter(View view, Pred pred, Preds... others) noexcept
+    {
+        if constexpr (sizeof...(Preds) != 0)
+            return filter(view, [=](type_iterator auto it) consteval noexcept { return std::invoke(pred, it) && (true && ... && std::invoke(others, it)); });
+        
+        if constexpr (constexpr auto it = find_if(view, pred); it <=> sentinel(view) == std::strong_ordering::equal)
+        {
+            return types_view<>{};
+        }
+        else
+        {
+            return concat(
+                types_view<type_t<decltype(it)>>{},
+                filter(itoa(next(it), sentinel(view)), pred)
+            );
+        }
     }
 }
 
