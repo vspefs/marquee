@@ -151,6 +151,88 @@ namespace mrq
 
     template <typename View, typename Pred>
     concept standard_types_view_invocable = standard_types_view_invocable_helper<void, Pred, View>(std::make_integer_sequence<size_t, View::size + 1>());
+
+    template <typename Final, typename Initial, typename Pred, typename... Leftovers>
+    consteval bool chain_invocable_helper() noexcept
+    {
+        using ret_t = std::invoke_result_t<Pred, Initial>;
+        if constexpr (sizeof...(Leftovers) == 0)
+        {
+            if constexpr (std::same_as<Final, void>)
+                return true;
+            else
+                return std::same_as<Final, ret_t>;
+        }
+        return chain_invocable_helper<Final, ret_t, Leftovers...>();
+    }
+
+    template <typename Final, typename Initial, typename... Preds>
+    concept chain_invocable_r = sizeof...(Preds) != 0 && chain_invocable_helper<Final, Initial, Preds...>();
+
+    template <typename Initial, typename... Preds>
+    concept chain_invocable = sizeof...(Preds) != 0 && chain_invocable_helper<void, Initial, Preds...>();
+
+    export template <type_iterator Begin, type_iterator End> requires std::same_as<view_type_t<Begin>, view_type_t<End>>
+    consteval auto itoa(Begin begin, End end) noexcept; // forward declaration
+
+    consteval bool stadnard_types_view_chain_invocable_helper_each(standard_types_view auto current, standard_types_view auto preds, standard_types_view auto final) noexcept
+    {
+        if constexpr (size(preds) == 1)
+        {
+            if constexpr (empty(final))
+                return std::invocable<type_t<begin_t<decltype(preds)>>, type_t<begin_t<decltype(current)>>>;
+            else
+                return std::same_as<
+                    std::invoke_result_t<type_t<begin_t<decltype(preds)>>, type_t<begin_t<decltype(current)>>>,
+                    type_t<begin_t<decltype(final)>>
+                >;
+        }
+        else
+        {
+            return stadnard_types_view_chain_invocable_helper_each(current, itoa(next(begin(preds)), end(preds)), final);
+        }
+    }
+
+    template <typename Final, standard_types_view View, standard_types_view PredsView, size_t... Is>
+    consteval bool stadnard_types_view_chain_invocable_helper(std::integer_sequence<size_t, Is...>) noexcept
+    {
+        if constexpr (std::same_as<Final, void>)
+        {
+            return (
+                stadnard_types_view_chain_invocable_helper_each(
+                    types_view<iterator_at_or_sentinel_t<View, Is>>{},
+                    PredsView{},
+                    types_view<>{}
+                ) 
+                && ...
+            );
+        }
+        else
+        {
+            return (
+                stadnard_types_view_chain_invocable_helper_each(
+                    types_view<iterator_at_or_sentinel_t<View, Is>>{},
+                    PredsView{},
+                    types_view<Final>{}
+                ) 
+                && ...
+            );
+        }
+    }
+
+    template <typename Final, typename View, typename... Preds>
+    concept standard_types_view_chain_invocable_r = 
+           sizeof...(Preds) != 0
+        && stadnard_types_view_chain_invocable_helper<Final, View, types_view<Preds...>>(
+               std::make_integer_sequence<size_t, View::size + 1>()
+           );
+
+    template <typename View, typename... Preds>
+    concept standard_types_view_chain_invocable = 
+           sizeof...(Preds) != 0
+        && stadnard_types_view_chain_invocable_helper<void, View, types_view<Preds...>>(
+               std::make_integer_sequence<size_t, View::size + 1>()
+           );
 }
 
 export namespace mrq
@@ -163,6 +245,12 @@ export namespace mrq
 
     template <type_iterator Begin, type_iterator End> requires std::same_as<view_type_t<Begin>, view_type_t<End>>
     consteval auto itoa(Begin begin, End end) noexcept;
+
+    template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_chain_invocable<View, Pred, Preds...>
+    consteval auto evaluate(View view, Pred pred, Preds... others) noexcept;
+
+    template <typename Ret, standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_chain_invocable_r<Ret, View, Pred, Preds...>
+    consteval auto evaluate_to(View view, Pred pred, Preds... others) noexcept -> std::array<Ret, size(view)>;
 
     template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_invocable_r<bool, Pred, View> && (true && ... && standard_types_view_invocable_r<bool, Preds, View>)
     consteval auto filter(View view, Pred pred, Preds... others) noexcept;
@@ -245,6 +333,51 @@ namespace mrq
     consteval auto itoa(Begin begin, End end) noexcept
     {
         return itoa_helper(begin, end);
+    }
+
+    template <typename Initial, typename Pred, typename... Preds>
+    consteval auto evaluate_helper() noexcept
+    {
+        using ret_t = std::invoke_result_t<Pred, Initial>;
+        if constexpr (sizeof...(Preds) == 0)
+            return types_view<ret_t>{};
+        else
+            return evaluate_helper<ret_t, Preds...>();
+    }
+
+    template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_chain_invocable<View, Pred, Preds...>
+    consteval auto evaluate(View view, Pred pred, Preds... others) noexcept
+    {
+        using result_t = type_t<begin_t<decltype(evaluate_helper<begin_t<View>, Pred, Preds...>())>>;
+        return evaluate_to<result_t, View, Pred, Preds...>(view, pred, others...);
+    }
+
+    template <typename Initial, typename Pred, typename... Preds>
+    consteval auto evaluate_to_helper_invoker(Initial initial) noexcept
+    {
+        constexpr auto ret = std::invoke(Pred{}, initial);
+        if constexpr (sizeof...(Preds) == 0)
+            return ret;
+        else
+            return evaluate_to_helper_invoker<decltype(ret), Preds...>(ret);
+    }
+
+    template <typename Ret, type_iterator It, typename... Preds>
+    consteval auto evaluate_to_helper(Ret ret) noexcept
+    {
+        if constexpr (std::same_as<It, sentinel_t<view_type_t<It>>>)
+            return ret;
+        else
+        {
+            ret[index(It{})] = evaluate_to_helper_invoker<It, Preds...>(It{});
+            return evaluate_to_helper<decltype(ret), next_t<It>, Preds...>(ret);
+        }
+    }
+
+    template <typename Ret, standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_chain_invocable_r<Ret, View, Pred, Preds...>
+    consteval auto evaluate_to(View view, Pred pred, Preds... others) noexcept -> std::array<Ret, size(view)>
+    {
+        return evaluate_to_helper<std::array<Ret, size(view)>, begin_t<View>, Pred, Preds...>({});
     }
 
     template <standard_types_view View, typename Pred, typename... Preds> requires standard_types_view_invocable_r<bool, Pred, View> && (true && ... && standard_types_view_invocable_r<bool, Preds, View>)

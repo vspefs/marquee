@@ -49,6 +49,9 @@ export namespace mrq::infra
     template <typename View, size_t At> requires standard_view<View> && (At < View::size || View::size == 0)
     using iterator_at_t = View::template iterator<At>;
 
+    template <typename View, size_t At> requires standard_view<View>
+    using iterator_at_or_sentinel_t = std::conditional_t<At >= View::size, typename View::sentinel, typename View::template iterator<At>>;
+
     template <typename It> requires meta_iterator<It>
     using view_type_t = typename It::view_type;
 
@@ -141,6 +144,7 @@ export namespace mrq::infra
 export namespace mrq
 {
     using ::mrq::infra::iterator_at_t;
+    using ::mrq::infra::iterator_at_or_sentinel_t;
     using ::mrq::infra::at;
     using ::mrq::infra::view_type_t;
     
