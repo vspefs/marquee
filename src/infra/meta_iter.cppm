@@ -1,6 +1,7 @@
 export module vspefs.marquee : infra.meta_iter;
 
 import std;
+import : utils.fnzz;
 
 // ---- concepts ---- //
 
@@ -26,20 +27,45 @@ namespace mrq::infra
     concept meta_iterator_non_sentinel = meta_iterator<T> && (!meta_sentinel<T>);
 
     template <typename View, size_t I>
-    concept has_valid_iterator_at = 
+    concept standard_view_helper_concept = 
            (I == View::size && meta_sentinel<typename View::sentinel>) 
         || (I != View::size && meta_iterator_non_sentinel<typename View::template iterator<I>>);
 
     template <typename View, size_t... Is>
     consteval bool standard_view_helper(std::integer_sequence<size_t, Is...>)
     {
-        return (has_valid_iterator_at<View, Is> && ...);
+        return (standard_view_helper_concept<View, Is> && ...);
     }
 
     export template <typename View>
     concept standard_view =
            std::same_as<std::remove_cvref_t<decltype(View::size)>, size_t> 
         && standard_view_helper<View>(std::make_integer_sequence<size_t, View::size + 1>());
+
+    template <typename Fn, typename View, size_t... Is>
+    consteval bool invocable_on_helper(std::integer_sequence<size_t, Is...>) noexcept
+    {
+        return (std::invocable<Fn, typename View::template iterator<Is>> && ...);
+    }
+
+    export template <typename Fn, typename View>
+    concept invocable_on = 
+           infra::standard_view<View>
+        && invocable_on_helper<Fn, View>(std::make_integer_sequence<size_t, View::size>());
+
+    template <typename Fn, typename Ret, typename View, size_t... Is>
+    consteval bool invocable_on_r_helper(std::integer_sequence<size_t, Is...>) noexcept
+    {
+        return (std::convertible_to<std::invoke_result_t<Fn, typename View::template iterator<Is>>, Ret> && ...);
+    }
+
+    export template <typename Fn, typename Ret, typename View>
+    concept invocable_on_r = 
+           invocable_on<Fn, View>
+        && invocable_on_r_helper<Fn, Ret, View>(std::make_integer_sequence<size_t, View::size>());
+
+    export template <typename Pred, typename View>
+    concept predicate_on = invocable_on_r<Pred, bool, View>;
 }
 
 // ---- basic iterator support ---- //
@@ -170,6 +196,10 @@ export namespace mrq
     using ::mrq::infra::prev_t;
 
     using ::mrq::infra::operator<=>;    // For ADL of classes residing in `mrq`. I guess. If it doesn't help, it doesn't hurt anyway.
+
+    using ::mrq::infra::invocable_on;
+    using ::mrq::infra::invocable_on_r;
+    using ::mrq::infra::predicate_on;
 }
 
 // NOLINTEND(misc-unused-using-decls)
